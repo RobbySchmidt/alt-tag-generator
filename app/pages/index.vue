@@ -127,14 +127,15 @@ async function saveAlt(file: EnrichedFile, altText: string) {
     else file.status = 'ok'
 
     file.generatedAlt = undefined
-    if (selectedFile.value?.id === file.id) {
-      selectedFile.value = { ...file }
-      editingAlt.value = ''
-    }
   } catch (e) {
     console.error(e)
   } finally {
     file.isSaving = false
+    // Update selectedFile AFTER isSaving is reset so the panel reflects correct state
+    if (selectedFile.value?.id === file.id) {
+      selectedFile.value = { ...file, isSaving: false }
+      editingAlt.value = ''
+    }
   }
 }
 
