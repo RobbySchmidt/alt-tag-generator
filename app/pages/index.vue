@@ -4,13 +4,10 @@ import type { EnrichedFile } from '~/composables/useDirectus'
 definePageMeta({ middleware: 'auth' })
 
 const { fetchFiles, updateFileTitle, clearSession, getToken, baseUrl } = useDirectus()
-const config = useRuntimeConfig()
 
 // State
 const files = ref<EnrichedFile[]>([])
 const total = ref(0)
-const page = ref(1)
-const limit = 24
 const loading = ref(false)
 const scanDone = ref(false)
 const filterStatus = ref<'all' | 'missing' | 'insufficient' | 'ok'>('all')
@@ -62,7 +59,7 @@ async function scan() {
   scanDone.value = false
   files.value = []
   try {
-    const res = await fetchFiles(1, 200) // fetch up to 200 for full overview
+    const res = await fetchFiles()
     files.value = res.files
     total.value = res.total
     scanDone.value = true
@@ -108,6 +105,10 @@ async function generateAllAlt() {
   for (const file of targets) {
     await generateAlt(file)
     generatingAllProgress.value++
+    // Gemini Free Tier: max 15 req/min → 1 req per ~4s to stay safe
+    if (generatingAllProgress.value < targets.length) {
+      await new Promise(resolve => setTimeout(resolve, 4000))
+    }
   }
   generatingAll.value = false
 }

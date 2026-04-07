@@ -46,11 +46,7 @@ function getAltTextStatus(file: DirectusFile): AltTextStatus {
 
 export function useDirectus() {
   const token = useCookie('directus_token', { maxAge: 60 * 60 * 8 })
-
-  // Stores the currently active Directus URL
   const storedUrl = useCookie('directus_url', { maxAge: 60 * 60 * 24 * 30 })
-
-  // Stores list of previously used Directus URLs (max 10)
   const savedInstances = useCookie<string[]>('directus_instances', {
     maxAge: 60 * 60 * 24 * 90,
     default: () => [],
@@ -76,37 +72,49 @@ export function useDirectus() {
       method: 'POST',
       body: { email, password },
     })
-    // Persist URL only after successful login
     storedUrl.value = cleanUrl
     saveInstance(cleanUrl)
     return res.data.access_token
   }
 
-  async function fetchFiles(page = 1, limit = 200): Promise<{ files: EnrichedFile[]; total: number }> {
-    const offset = (page - 1) * limit
+  async function fetchFiles(): Promise<{ files: EnrichedFile[]; total: number }> {
     const url = baseUrl.value
+    const pageSize = 200
+    let allFiles: EnrichedFile[] = []
+    let page = 0
 
-    const res = await $fetch<{ data: DirectusFile[]; meta: { total_count: number } }>(
-      `${url}/files`,
-      {
-        headers: { Authorization: `Bearer ${token.value}` },
-        params: {
-          filter: { type: { _starts_with: 'image/' } },
-          fields: ['id', 'title', 'description', 'filename_download', 'type', 'width', 'height', 'filesize', 'uploaded_on', 'modified_on'],
-          limit,
-          offset,
-          meta: 'total_count',
-        },
-      }
-    )
+    while (true) {
+      const res = await $fetch<{ data: DirectusFile[]; meta: { total_count: number } }>(
+        `${url}/files`,
+        {
+          headers: { Authorization: `Bearer ${token.value}` },
+          params: {
+            filter: { type: { _starts_with: 'image/' } },
+            fields: ['id', 'title', 'description', 'filename_download', 'type', 'width', 'height', 'filesize', 'uploaded_on', 'modified_on'],
+            limit: pageSize,
+            offset: page * pageSize,
+            meta: 'total_count',
+          },
+        }
+      )
 
-    const files: EnrichedFile[] = res.data.map(file => ({
-      ...file,
-      status: getAltTextStatus(file),
-      imageUrl: `${url}/assets/${file.id}?width=300&height=200&fit=cover&access_token=${token.value}`,
-    }))
+      const batch = res.data.map(file => ({
+        ...file,
+        status: getAltTextStatus(file),
+        imageUrl: `${url}/assets/${file.id}?width=300&height=200&fit=cover&access_token=${token.value}`,
+      }))
 
-    return { files, total: res.meta.total_count }
+      allFiles = [...allFiles, ...batch]
+      page++
+
+      // Stop if this batch was empty or we got fewer results than pageSize
+      if (batch.length === 0 || batch.length < pageSize) break
+
+      // Safety: stop if we somehow exceed total_count
+      if (allFiles.length >= res.meta.total_count) break
+    }
+
+    return { files: allFiles, total: allFiles.length }
   }
 
   async function updateFileTitle(fileId: string, title: string): Promise<void> {
